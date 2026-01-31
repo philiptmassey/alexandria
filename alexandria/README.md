@@ -2,14 +2,32 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+### Local database (MongoDB)
+
+This project uses MongoDB. For local testing you can either run MongoDB locally
+or use a free MongoDB Atlas cluster and set `MONGODB_URI`.
+
+Local MongoDB default:
 
 ```bash
+mongod --dbpath ./data/mongo
+```
+
+Or set an Atlas URI in `.env.local`:
+
+```bash
+MONGODB_URI="your-connection-string"
+```
+
+First, install dependencies and run the development server:
+
+```bash
+pnpm install
+pnpm dev
+# or
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
 # or
 bun dev
 ```

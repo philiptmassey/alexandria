@@ -18,9 +18,11 @@ export default function DocListItem({
   onToggleRead,
 }: DocListItemProps) {
   return (
-    <li className="flex items-start justify-between gap-4 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+    <li className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0 space-y-1">
-        <p className="truncate text-sm font-medium text-zinc-900">{url}</p>
+        <p className="break-all text-sm font-medium text-zinc-900 sm:truncate">
+          {url}
+        </p>
         <p className="text-xs text-zinc-500">
           Added{" "}
           {new Date(createdAt).toLocaleDateString("en-US", {
@@ -30,7 +32,7 @@ export default function DocListItem({
           })}
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 self-start sm:shrink-0">
         <button
           type="button"
           aria-label={read ? "Mark as unread" : "Mark as read"}

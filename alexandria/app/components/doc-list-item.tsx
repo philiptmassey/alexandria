@@ -54,6 +54,29 @@ export default function DocListItem({
             <path d="M20 6L9 17l-5-5" />
           </svg>
         </button>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open document"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:bg-zinc-100"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14 4h6v6" />
+            <path d="M10 14L20 4" />
+            <path d="M20 14v6h-6" />
+            <path d="M4 10v10h10" />
+          </svg>
+        </a>
         <button
           type="button"
           aria-label="Delete document"

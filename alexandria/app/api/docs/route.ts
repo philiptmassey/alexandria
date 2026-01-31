@@ -51,7 +51,7 @@ export async function GET() {
   const docs = await db
     .collection<Doc>(collectionName)
     .find({ user_id: userId })
-    .sort({ _id: -1 })
+    .sort({ created_at: -1 })
     .toArray();
 
   return NextResponse.json({

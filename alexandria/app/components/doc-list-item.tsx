@@ -1,0 +1,84 @@
+"use client";
+
+type DocListItemProps = {
+  url: string;
+  createdAt: string;
+  isDeleting: boolean;
+  read: boolean;
+  onDelete: () => void;
+  onToggleRead: () => void;
+};
+
+export default function DocListItem({
+  url,
+  createdAt,
+  isDeleting,
+  read,
+  onDelete,
+  onToggleRead,
+}: DocListItemProps) {
+  return (
+    <li className="flex items-start justify-between gap-4 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+      <div className="min-w-0 space-y-1">
+        <p className="truncate text-sm font-medium text-zinc-900">{url}</p>
+        <p className="text-xs text-zinc-500">
+          Added{" "}
+          {new Date(createdAt).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={read ? "Mark as unread" : "Mark as read"}
+          onClick={onToggleRead}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm transition ${
+            read
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100"
+          }`}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label="Delete document"
+          onClick={onDelete}
+          disabled={isDeleting}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 shadow-sm transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 7h16" />
+            <path d="M9 7v-.5A2.5 2.5 0 0 1 11.5 4h1A2.5 2.5 0 0 1 15 6.5V7" />
+            <path d="M7 7l.7 10.3A2 2 0 0 0 9.7 19h4.6a2 2 0 0 0 2-1.7L17 7" />
+            <path d="M10 11v5" />
+            <path d="M14 11v5" />
+          </svg>
+        </button>
+      </div>
+    </li>
+  );
+}

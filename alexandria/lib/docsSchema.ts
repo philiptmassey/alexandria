@@ -1,23 +1,22 @@
 import type { ObjectId } from "mongodb";
 
-export type DocInsert = {
+export type Doc = {
+  _id?: ObjectId | string;
   url: string;
-  username: string;
-  created_at: Date;
+  user_id: string;
+  created_at: Date | string;
+  read?: boolean;
 };
 
-export type DocRecord = {
+export type DocWithId = Doc & {
   _id: ObjectId | string;
-  url: string;
-  username: string;
-  created_at: Date | string;
 };
 
 export type ApiDoc = {
   id: string;
   url: string;
-  username: string;
   created_at: string;
+  read: boolean;
 };
 
 export const normalizeCreatedAt = (value: Date | string) => {
@@ -30,9 +29,9 @@ export const normalizeCreatedAt = (value: Date | string) => {
     : parsed.toISOString();
 };
 
-export const toApiDoc = (doc: DocRecord): ApiDoc => ({
+export const toApiDoc = (doc: DocWithId): ApiDoc => ({
   id: doc._id.toString(),
   url: doc.url,
-  username: doc.username,
   created_at: normalizeCreatedAt(doc.created_at),
+  read: doc.read ?? false,
 });

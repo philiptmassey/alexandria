@@ -119,7 +119,7 @@ export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
           placeholder="https://example.com/paper"
           type="url"
           required
-          className="h-12 flex-1 rounded-lg border border-zinc-200 bg-white px-4 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-zinc-400"
+          className="h-12 min-h-[3rem] flex-1 appearance-none rounded-lg border border-zinc-200 bg-white px-4 text-base text-zinc-900 shadow-sm outline-none transition focus:border-zinc-400 sm:text-sm"
         />
         <button
           type="submit"

@@ -6,6 +6,7 @@ import { getDb } from "@/lib/mongo";
 import { authOptions } from "@/lib/auth";
 import { toApiDoc, type Doc, type DocWithId } from "@/lib/docsSchema";
 import { gatherDocMetadata } from "@/lib/docMetadata";
+import type { DocMetadata } from "@/lib/docMetadata";
 
 export const runtime = "nodejs";
 const collectionName = "docs";
@@ -29,6 +30,9 @@ const badRequest = (message: string) =>
 
 const unauthorized = (message = "Not authenticated.") =>
   NextResponse.json({ error: message }, { status: 401 });
+
+const internalError = (message = "Internal server error.") =>
+  NextResponse.json({ error: message }, { status: 500 });
 
 const coerceId = (id: string) => {
   if (/^[a-f0-9]{24}$/i.test(id)) {
@@ -79,9 +83,13 @@ export async function POST(request: Request) {
 
   const db = await getDb();
   const collection = db.collection<Doc>(collectionName);
-  const metadata = await gatherDocMetadata(url).catch(() => ({}));
-  const title =
-    typeof metadata.title === "string" ? metadata.title.trim() : "";
+  let metadata: DocMetadata;
+  try {
+    metadata = await gatherDocMetadata(url);
+  } catch {
+    return internalError("Could not fetch document metadata.");
+  }
+  const title = typeof metadata.title === "string" ? metadata.title.trim() : "";
   const createdAt = new Date();
   const doc: Doc = {
     url,

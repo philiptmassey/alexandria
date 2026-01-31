@@ -5,6 +5,7 @@ import type { Session } from "next-auth";
 import { getDb } from "@/lib/mongo";
 import { authOptions } from "@/lib/auth";
 import { toApiDoc, type Doc, type DocWithId } from "@/lib/docsSchema";
+import { gatherDocMetadata } from "@/lib/docMetadata";
 
 export const runtime = "nodejs";
 const collectionName = "docs";
@@ -78,9 +79,13 @@ export async function POST(request: Request) {
 
   const db = await getDb();
   const collection = db.collection<Doc>(collectionName);
+  const metadata = await gatherDocMetadata(url).catch(() => ({}));
+  const title =
+    typeof metadata.title === "string" ? metadata.title.trim() : "";
   const createdAt = new Date();
   const doc: Doc = {
     url,
+    title: title.length > 0 ? title : undefined,
     user_id: userId,
     created_at: createdAt,
     read: false,

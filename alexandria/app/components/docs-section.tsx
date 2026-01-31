@@ -7,6 +7,7 @@ import { DOCS_PAGE_SIZE } from "@/lib/constants";
 export type Doc = {
   id: string;
   url: string;
+  title?: string;
   created_at: string;
   read: boolean;
 };
@@ -48,6 +49,7 @@ export default function DocsSection({
             {pagedDocs.map((doc) => (
               <DocListItem
                 key={doc.id}
+                title={doc.title}
                 url={doc.url}
                 createdAt={doc.created_at}
                 isDeleting={deletingId === doc.url}

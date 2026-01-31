@@ -1,6 +1,7 @@
 "use client";
 
 type DocListItemProps = {
+  title?: string;
   url: string;
   createdAt: string;
   isDeleting: boolean;
@@ -10,6 +11,7 @@ type DocListItemProps = {
 };
 
 export default function DocListItem({
+  title,
   url,
   createdAt,
   isDeleting,
@@ -17,10 +19,23 @@ export default function DocListItem({
   onDelete,
   onToggleRead,
 }: DocListItemProps) {
+  const displayTitle = title?.trim();
+  const showTitle = Boolean(displayTitle);
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0 space-y-1">
-        <p className="break-all text-sm font-medium text-zinc-900 sm:truncate">
+        {showTitle ? (
+          <p className="text-sm font-semibold text-zinc-900 sm:truncate">
+            {displayTitle}
+          </p>
+        ) : null}
+        <p
+          className={`break-all sm:truncate ${
+            showTitle
+              ? "text-xs text-zinc-500"
+              : "text-sm font-medium text-zinc-900"
+          }`}
+        >
           {url}
         </p>
         <p className="text-xs text-zinc-500">

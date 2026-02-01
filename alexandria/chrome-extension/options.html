@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Alexandria Extension Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Alexandria Extension</h1>
+      <p>
+        Set the base URL for your Alexandria app. You must be signed in to the
+        app in this browser for saves to work.
+      </p>
+      <label for="apiBaseUrl">App URL</label>
+      <div class="row">
+        <input
+          id="apiBaseUrl"
+          type="url"
+          placeholder="https://alexandria-psi.vercel.app"
+          autocomplete="off"
+        />
+        <button id="save" type="button">Save</button>
+      </div>
+      <p class="hint">Example: https://alexandria-psi.vercel.app</p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

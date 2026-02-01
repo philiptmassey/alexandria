@@ -104,7 +104,7 @@ export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
     <section className="space-y-8">
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-          Archive
+          Library
         </p>
         <h2 className="text-2xl font-semibold tracking-tight">Reading list</h2>
         <p className="text-sm text-zinc-600">

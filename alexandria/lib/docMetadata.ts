@@ -27,6 +27,193 @@ const decodeHtmlEntities = (value: string) =>
       String.fromCharCode(Number.parseInt(num, 10)),
     );
 
+const parseMetaAttributes = (raw: string) => {
+  const attrs: Record<string, string> = {};
+  const attrRegex = /([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = attrRegex.exec(raw)) !== null) {
+    const key = match[1]?.toLowerCase();
+    if (!key) {
+      continue;
+    }
+    const value = match[3] ?? match[4] ?? match[5] ?? "";
+    attrs[key] = value;
+  }
+  return attrs;
+};
+
+const extractHeadingTitles = (html: string) => {
+  const matches = html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi);
+  const titles: string[] = [];
+  for (const match of matches) {
+    const cleaned = match[1]?.replace(/<[^>]+>/g, " ");
+    const normalized = normalizeTitle(
+      cleaned ? decodeHtmlEntities(cleaned) : "",
+    );
+    if (normalized) {
+      titles.push(normalized);
+    }
+  }
+  return titles;
+};
+
+const pickBestHeadingTitle = (titles: string[]) => {
+  if (titles.length === 0) {
+    return undefined;
+  }
+  const counts = new Map<string, { count: number; index: number }>();
+  titles.forEach((title, index) => {
+    const entry = counts.get(title);
+    if (entry) {
+      entry.count += 1;
+      return;
+    }
+    counts.set(title, { count: 1, index });
+  });
+
+  let bestTitle = titles[0];
+  let bestCount = 0;
+  let bestLength = 0;
+  let bestIndex = Number.POSITIVE_INFINITY;
+  for (const [title, { count, index }] of counts.entries()) {
+    const length = title.length;
+    if (
+      count > bestCount ||
+      (count === bestCount && length > bestLength) ||
+      (count === bestCount && length === bestLength && index < bestIndex)
+    ) {
+      bestTitle = title;
+      bestCount = count;
+      bestLength = length;
+      bestIndex = index;
+    }
+  }
+
+  return bestTitle;
+};
+
+const buildHeadingCounts = (titles: string[]) => {
+  const counts = new Map<string, number>();
+  for (const title of titles) {
+    const key = title.toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+};
+
+const splitTitleSegments = (title: string) => {
+  const normalized = title.replace(/\s+/g, " ").trim();
+  const segments = normalized
+    .split(/\s+(?:\|+|—|–|-|:|·|•|::)\s+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments.length > 0 ? segments : [normalized];
+};
+
+const STOP_SLUG_TOKENS = new Set([
+  "the",
+  "and",
+  "or",
+  "of",
+  "a",
+  "an",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "by",
+  "from",
+  "at",
+  "as",
+  "is",
+  "are",
+  "be",
+]);
+
+const extractUrlSlugTokens = (url: string | undefined) => {
+  if (!url) {
+    return [];
+  }
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length === 0) {
+      return [];
+    }
+    let slug = "";
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const candidate = parts[i].toLowerCase();
+      if (candidate && candidate !== "index" && candidate !== "home") {
+        slug = candidate;
+        break;
+      }
+    }
+    if (!slug) {
+      return [];
+    }
+    slug = slug.replace(/\.(html?|php|aspx?)$/i, "");
+    const tokens = slug
+      .replace(/[_-]+/g, " ")
+      .replace(/[^a-z0-9 ]+/gi, " ")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((token) => token.length >= 2 && !/^\d+$/.test(token))
+      .filter((token) => !STOP_SLUG_TOKENS.has(token));
+    return Array.from(new Set(tokens));
+  } catch {
+    return [];
+  }
+};
+
+const pickBestTitleSegment = (
+  segments: string[],
+  headingCounts: Map<string, number>,
+  url?: string,
+) => {
+  if (segments.length <= 1) {
+    return undefined;
+  }
+  const slugTokens = extractUrlSlugTokens(url);
+  let bestSegment: string | undefined;
+  let bestSlugMatches = 0;
+  let bestHeadingCount = 0;
+  let bestLength = 0;
+
+  for (const segment of segments) {
+    const lower = segment.toLowerCase();
+    let slugMatches = 0;
+    for (const token of slugTokens) {
+      if (lower.includes(token)) {
+        slugMatches += 1;
+      }
+    }
+    const headingCount = headingCounts.get(lower) ?? 0;
+    const length = segment.length;
+    if (
+      slugMatches > bestSlugMatches ||
+      (slugMatches === bestSlugMatches && headingCount > bestHeadingCount) ||
+      (slugMatches === bestSlugMatches &&
+        headingCount === bestHeadingCount &&
+        length > bestLength)
+    ) {
+      bestSegment = segment;
+      bestSlugMatches = slugMatches;
+      bestHeadingCount = headingCount;
+      bestLength = length;
+    }
+  }
+
+  if (
+    (bestSlugMatches >= 2 || (bestSlugMatches >= 1 && bestLength >= 12)) ||
+    bestHeadingCount >= 2
+  ) {
+    return bestSegment;
+  }
+
+  return undefined;
+};
+
 const readResponseBytes = async (response: Response, maxBytes: number) => {
   if (!response.body) {
     const buffer = Buffer.from(await response.arrayBuffer());
@@ -152,22 +339,41 @@ const extractNextDataTitle = (html: string) => {
   return undefined;
 };
 
-const extractHeadingTitle = (html: string) => {
-  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  if (!h1Match?.[1]) {
-    return undefined;
+const extractMetaTitle = (html: string) => {
+  const metaRegex = /<meta\b([^>]*?)>/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = metaRegex.exec(html)) !== null) {
+    const attrs = parseMetaAttributes(match[1]);
+    const key = (attrs.property ?? attrs.name ?? "").toLowerCase();
+    if (key === "og:title" || key === "twitter:title" || key === "title") {
+      const normalized = normalizeTitle(
+        decodeHtmlEntities(attrs.content ?? ""),
+      );
+      if (normalized) {
+        return normalized;
+      }
+    }
   }
-  const cleaned = h1Match[1].replace(/<[^>]+>/g, " ");
-  return normalizeTitle(decodeHtmlEntities(cleaned));
+  return undefined;
 };
 
-const extractTitleFromHtml = (html: string) => {
+const extractTitleFromHtml = (html: string, url?: string) => {
+  const headings = extractHeadingTitles(html);
+  const headingCounts = buildHeadingCounts(headings);
+
   const nextTitle = extractNextDataTitle(html);
   if (nextTitle) {
     return nextTitle;
   }
 
-  const headingTitle = extractHeadingTitle(html);
+  const metaTitle = extractMetaTitle(html);
+  if (metaTitle) {
+    const segments = splitTitleSegments(metaTitle);
+    const refined = pickBestTitleSegment(segments, headingCounts, url);
+    return refined ?? metaTitle;
+  }
+
+  const headingTitle = pickBestHeadingTitle(headings);
   if (headingTitle) {
     return headingTitle;
   }
@@ -178,10 +384,12 @@ const extractTitleFromHtml = (html: string) => {
   }
   const cleaned = titleMatch[1].replace(/<[^>]+>/g, " ");
   const normalized = normalizeTitle(decodeHtmlEntities(cleaned));
-  if (normalized) {
-    return normalized;
+  if (!normalized) {
+    return undefined;
   }
-  return undefined;
+  const segments = splitTitleSegments(normalized);
+  const refined = pickBestTitleSegment(segments, headingCounts, url);
+  return refined ?? normalized;
 };
 
 const extractPdfLiteral = (text: string, startIndex: number) => {
@@ -270,6 +478,6 @@ export const gatherDocMetadata = async (url: string): Promise<DocMetadata> => {
   const html = new TextDecoder("utf-8", { fatal: false }).decode(
     snippet.bytes,
   );
-  const title = extractTitleFromHtml(html);
+  const title = extractTitleFromHtml(html, url);
   return title ? { title } : {};
 };

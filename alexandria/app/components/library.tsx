@@ -1,20 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import DocsSection, { type Doc } from "@/app/components/docs-section";
+import LibrarySection, {
+  type LibraryDoc,
+} from "@/app/components/library-section";
 
-type DocsScreenProps = {
+type LibraryProps = {
   reloadSignal?: number;
 };
 
-export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
+const getReadTimestamp = (doc: LibraryDoc) => {
+  const candidate = doc.read_at ?? doc.created_at;
+  const parsed = new Date(candidate);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+};
+
+export default function Library({ reloadSignal = 0 }: LibraryProps) {
   const [url, setUrl] = useState("");
-  const [docs, setDocs] = useState<Doc[]>([]);
+  const [docs, setDocs] = useState<LibraryDoc[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unreadDocs = docs.filter((doc) => !doc.read);
-  const readDocs = docs.filter((doc) => doc.read);
+  const readDocs = docs
+    .filter((doc) => doc.read)
+    .sort((first, second) => getReadTimestamp(second) - getReadTimestamp(first));
 
   const loadDocs = async () => {
     const response = await fetch("/api/docs", { cache: "no-store" });
@@ -82,7 +92,7 @@ export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
     setDeletingId(null);
   };
 
-  const handleToggleRead = async (doc: Doc) => {
+  const handleToggleRead = async (doc: LibraryDoc) => {
     setError(null);
 
     const response = await fetch("/api/docs", {
@@ -137,7 +147,7 @@ export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
       ) : null}
 
       <section className="space-y-6">
-        <DocsSection
+        <LibrarySection
           title="Unread"
           docs={unreadDocs}
           emptyMessage="Nothing unread."
@@ -146,7 +156,7 @@ export default function DocsScreen({ reloadSignal = 0 }: DocsScreenProps) {
           onToggleRead={handleToggleRead}
         />
 
-        <DocsSection
+        <LibrarySection
           title="Read"
           docs={readDocs}
           emptyMessage="Nothing read yet."

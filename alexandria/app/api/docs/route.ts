@@ -97,6 +97,7 @@ export async function POST(request: Request) {
     user_id: userId,
     created_at: createdAt,
     read: false,
+    read_at: null,
   };
 
   const result = await collection.insertOne(doc);
@@ -163,7 +164,12 @@ export async function PATCH(request: Request) {
   const collection = db.collection<Doc>(collectionName);
   const result = await collection.updateOne(
     { _id: coerceId(id), user_id: userId } as Filter<Doc>,
-    { $set: { read } },
+    {
+      $set: {
+        read,
+        read_at: read ? new Date() : null,
+      },
+    },
   );
 
   if (!result.matchedCount) {

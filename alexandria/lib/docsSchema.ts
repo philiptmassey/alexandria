@@ -7,6 +7,7 @@ export type Doc = {
   user_id: string;
   created_at: Date | string;
   read?: boolean;
+  read_at?: Date | string | null;
 };
 
 export type DocWithId = Doc & {
@@ -19,6 +20,7 @@ export type ApiDoc = {
   title?: string;
   created_at: string;
   read: boolean;
+  read_at: string | null;
 };
 
 export const normalizeCreatedAt = (value: Date | string) => {
@@ -37,4 +39,5 @@ export const toApiDoc = (doc: DocWithId): ApiDoc => ({
   title: doc.title,
   created_at: normalizeCreatedAt(doc.created_at),
   read: doc.read ?? false,
+  read_at: doc.read_at ? normalizeCreatedAt(doc.read_at) : null,
 });

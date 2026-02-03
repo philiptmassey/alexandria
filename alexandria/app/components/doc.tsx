@@ -1,26 +1,31 @@
 "use client";
 
-type DocListItemProps = {
+type DocProps = {
   title?: string;
   url: string;
   createdAt: string;
+  readAt: string | null;
   isDeleting: boolean;
   read: boolean;
   onDelete: () => void;
   onToggleRead: () => void;
 };
 
-export default function DocListItem({
+export default function Doc({
   title,
   url,
   createdAt,
+  readAt,
   isDeleting,
   read,
   onDelete,
   onToggleRead,
-}: DocListItemProps) {
+}: DocProps) {
   const displayTitle = title?.trim();
   const showTitle = Boolean(displayTitle);
+  const readDate = readAt ? new Date(readAt) : null;
+  const showReadAt =
+    read && readDate !== null && !Number.isNaN(readDate.getTime());
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0 space-y-1">
@@ -46,6 +51,16 @@ export default function DocListItem({
             year: "numeric",
           })}
         </p>
+        {showReadAt && readDate ? (
+          <p className="text-xs text-zinc-500">
+            Read{" "}
+            {readDate.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+        ) : null}
       </div>
       <div className="flex items-center gap-2 self-start sm:shrink-0">
         <button

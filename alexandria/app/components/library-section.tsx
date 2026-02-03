@@ -1,34 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import DocListItem from "@/app/components/doc-list-item";
+import Doc from "@/app/components/doc";
 import { DOCS_PAGE_SIZE } from "@/lib/constants";
 
-export type Doc = {
+export type LibraryDoc = {
   id: string;
   url: string;
   title?: string;
   created_at: string;
   read: boolean;
+  read_at: string | null;
 };
 
-type DocsSectionProps = {
+type LibrarySectionProps = {
   title: string;
-  docs: Doc[];
+  docs: LibraryDoc[];
   emptyMessage: string;
   deletingId: string | null;
   onDelete: (url: string) => void;
-  onToggleRead: (doc: Doc) => void;
+  onToggleRead: (doc: LibraryDoc) => void;
 };
 
-export default function DocsSection({
+export default function LibrarySection({
   title,
   docs,
   emptyMessage,
   deletingId,
   onDelete,
   onToggleRead,
-}: DocsSectionProps) {
+}: LibrarySectionProps) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(docs.length / DOCS_PAGE_SIZE));
   const sliceStart = (page - 1) * DOCS_PAGE_SIZE;
@@ -47,11 +48,12 @@ export default function DocsSection({
         <div className="space-y-3">
           <ul className="space-y-3">
             {pagedDocs.map((doc) => (
-              <DocListItem
+              <Doc
                 key={doc.id}
                 title={doc.title}
                 url={doc.url}
                 createdAt={doc.created_at}
+                readAt={doc.read_at}
                 isDeleting={deletingId === doc.url}
                 read={doc.read}
                 onDelete={() => onDelete(doc.url)}

@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import AuthSplash from "@/app/components/auth-splash";
-import DocsScreen from "@/app/components/docs-screen";
+import Library from "@/app/components/library";
 import ExploreScreen from "@/app/components/explore-screen";
 import { useState } from "react";
 
@@ -44,7 +44,7 @@ export default function Home() {
 
         <div className="mt-10 grid gap-12 md:grid-cols-2 lg:gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <ExploreScreen onAdded={() => setReloadSignal((value) => value + 1)} />
-          <DocsScreen reloadSignal={reloadSignal} />
+          <Library reloadSignal={reloadSignal} />
         </div>
       </main>
     </div>

@@ -7,13 +7,14 @@ import { authOptions } from "@/lib/auth";
 import { toApiDoc, type Doc, type DocWithId } from "@/lib/docsSchema";
 import { gatherDocMetadata } from "@/lib/docMetadata";
 import type { DocMetadata } from "@/lib/docMetadata";
+import { stripUrlArguments } from "@/lib/url";
 
 export const runtime = "nodejs";
 const collectionName = "docs";
 
 const getUrlFromBody = (body: unknown) =>
   typeof (body as { url?: unknown })?.url === "string"
-    ? (body as { url: string }).url.trim()
+    ? stripUrlArguments((body as { url: string }).url)
     : "";
 
 const isValidUrl = (value: string) => {

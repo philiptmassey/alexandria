@@ -132,14 +132,29 @@ export default function Library({ reloadSignal = 0 }: LibraryProps) {
 
   return (
     <section className="space-y-8">
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-          Library
-        </p>
-        <h2 className="text-2xl font-semibold tracking-tight">Reading list</h2>
-        <p className="text-sm text-zinc-600">
-          Manage your saved articles and mark them as read.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+            Library
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight">Reading list</h2>
+          <p className="text-sm text-zinc-600">
+            Manage your saved articles and mark them as read.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            handleRefreshMetadata().catch(() => {
+              setError("Could not refresh metadata.");
+              setIsRefreshingMetadata(false);
+            });
+          }}
+          disabled={isRefreshingMetadata}
+          className="h-10 self-start rounded-lg border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isRefreshingMetadata ? "Refreshing metadata..." : "Refresh metadata"}
+        </button>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row">
@@ -159,22 +174,6 @@ export default function Library({ reloadSignal = 0 }: LibraryProps) {
           {isSaving ? "Saving..." : "Add URL"}
         </button>
       </form>
-
-      <div className="flex justify-start">
-        <button
-          type="button"
-          onClick={() => {
-            handleRefreshMetadata().catch(() => {
-              setError("Could not refresh metadata.");
-              setIsRefreshingMetadata(false);
-            });
-          }}
-          disabled={isRefreshingMetadata}
-          className="h-10 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isRefreshingMetadata ? "Refreshing metadata..." : "Refresh metadata"}
-        </button>
-      </div>
 
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

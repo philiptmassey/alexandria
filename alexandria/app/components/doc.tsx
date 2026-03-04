@@ -26,6 +26,11 @@ export default function Doc({
   const readDate = readAt ? new Date(readAt) : null;
   const showReadAt =
     read && readDate !== null && !Number.isNaN(readDate.getTime());
+  const addedDate = new Date(createdAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0 space-y-1">
@@ -43,24 +48,21 @@ export default function Doc({
         >
           {url}
         </p>
-        <p className="text-xs text-zinc-500">
-          Added{" "}
-          {new Date(createdAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </p>
         {showReadAt && readDate ? (
-          <p className="text-xs text-zinc-500">
-            Read{" "}
-            {readDate.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
-        ) : null}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+            <span>
+              Read{" "}
+              {readDate.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+            <span>Added {addedDate}</span>
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500">Added {addedDate}</p>
+        )}
       </div>
       <div className="flex items-center gap-2 self-start sm:shrink-0">
         <button

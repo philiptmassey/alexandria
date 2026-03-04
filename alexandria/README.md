@@ -62,6 +62,7 @@ All endpoints require Google sign-in.
 
 - `GET /api/docs` lists saved documents.
 - `POST /api/docs` adds a URL.
+- `PUT /api/docs` refreshes metadata for saved documents.
 - `PATCH /api/docs` toggles read state.
 - `DELETE /api/docs` removes a URL.
 

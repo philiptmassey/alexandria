@@ -303,6 +303,47 @@ const isPdfSnippet = (bytes: Uint8Array, contentType: string | null) => {
   );
 };
 
+const getArxivAbsUrlFromPdfUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== "arxiv.org" && hostname !== "www.arxiv.org") {
+      return null;
+    }
+
+    const match = parsed.pathname.match(/^\/pdf\/(.+?)(?:\.pdf)?\/?$/i);
+    const identifier = match?.[1]?.replace(/^\/+|\/+$/g, "");
+    if (!identifier) {
+      return null;
+    }
+
+    return `https://arxiv.org/abs/${identifier}`;
+  } catch {
+    return null;
+  }
+};
+
+const extractArxivAbsTitleFromPdfUrl = async (pdfUrl: string) => {
+  const absUrl = getArxivAbsUrlFromPdfUrl(pdfUrl);
+  if (!absUrl) {
+    return undefined;
+  }
+
+  try {
+    const snippet = await fetchUrlSnippet(absUrl);
+    if (!snippet || isPdfSnippet(snippet.bytes, snippet.contentType)) {
+      return undefined;
+    }
+
+    const html = new TextDecoder("utf-8", { fatal: false }).decode(
+      snippet.bytes,
+    );
+    return extractTitleFromHtml(html, absUrl);
+  } catch {
+    return undefined;
+  }
+};
+
 const extractNextDataTitle = (html: string) => {
   const match = html.match(
     /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
@@ -471,8 +512,13 @@ export const gatherDocMetadata = async (url: string): Promise<DocMetadata> => {
   }
 
   if (isPdfSnippet(snippet.bytes, snippet.contentType)) {
-    const title = extractTitleFromPdf(snippet.bytes);
-    return title ? { title } : {};
+    const pdfTitle = extractTitleFromPdf(snippet.bytes);
+    if (pdfTitle) {
+      return { title: pdfTitle };
+    }
+
+    const arxivTitle = await extractArxivAbsTitleFromPdfUrl(url);
+    return arxivTitle ? { title: arxivTitle } : {};
   }
 
   const html = new TextDecoder("utf-8", { fatal: false }).decode(

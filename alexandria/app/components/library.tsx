@@ -19,6 +19,7 @@ export default function Library({ reloadSignal = 0 }: LibraryProps) {
   const [url, setUrl] = useState("");
   const [docs, setDocs] = useState<LibraryDoc[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unreadDocs = docs.filter((doc) => !doc.read);
@@ -110,6 +111,25 @@ export default function Library({ reloadSignal = 0 }: LibraryProps) {
     await loadDocs();
   };
 
+  const handleRefreshMetadata = async () => {
+    setIsRefreshingMetadata(true);
+    setError(null);
+
+    const response = await fetch("/api/docs", {
+      method: "PUT",
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      setError(data?.error ?? "Could not refresh metadata.");
+      setIsRefreshingMetadata(false);
+      return;
+    }
+
+    await loadDocs();
+    setIsRefreshingMetadata(false);
+  };
+
   return (
     <section className="space-y-8">
       <div className="space-y-2">
@@ -139,6 +159,22 @@ export default function Library({ reloadSignal = 0 }: LibraryProps) {
           {isSaving ? "Saving..." : "Add URL"}
         </button>
       </form>
+
+      <div className="flex justify-start">
+        <button
+          type="button"
+          onClick={() => {
+            handleRefreshMetadata().catch(() => {
+              setError("Could not refresh metadata.");
+              setIsRefreshingMetadata(false);
+            });
+          }}
+          disabled={isRefreshingMetadata}
+          className="h-10 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isRefreshingMetadata ? "Refreshing metadata..." : "Refresh metadata"}
+        </button>
+      </div>
 
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

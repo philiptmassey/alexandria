@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
-import { ObjectId, type Filter } from "mongodb";
+import {
+  ObjectId,
+  type Collection,
+  type Filter,
+  type UpdateFilter,
+} from "mongodb";
 import { getServerSession } from "next-auth/next";
 import type { Session } from "next-auth";
 import { getDb } from "@/lib/mongo";
 import { authOptions } from "@/lib/auth";
 import { toApiDoc, type Doc, type DocWithId } from "@/lib/docsSchema";
 import { gatherDocMetadata } from "@/lib/docMetadata";
-import type { DocMetadata } from "@/lib/docMetadata";
 import { stripUrlArguments } from "@/lib/url";
 
 export const runtime = "nodejs";
 const collectionName = "docs";
+const METADATA_REFRESH_CONCURRENCY = 4;
 
 const getUrlFromBody = (body: unknown) =>
   typeof (body as { url?: unknown })?.url === "string"
@@ -47,6 +52,96 @@ const getUserId = (session: Session | null) => {
   return userId && userId.trim().length > 0 ? userId : null;
 };
 
+const normalizeDocTitle = (value: string | null | undefined) => {
+  const title = typeof value === "string" ? value.trim() : "";
+  return title.length > 0 ? title : undefined;
+};
+
+const resolveDocTitle = async (url: string) => {
+  const metadata = await gatherDocMetadata(url);
+  return normalizeDocTitle(metadata.title);
+};
+
+type TitleUpdate = {
+  title: string | undefined;
+  update: UpdateFilter<Doc> | null;
+};
+
+const buildTitleUpdate = async (
+  url: string,
+  currentTitle?: string,
+): Promise<TitleUpdate> => {
+  const normalizedCurrentTitle = normalizeDocTitle(currentTitle);
+  const refreshedTitle = await resolveDocTitle(url);
+
+  if (normalizedCurrentTitle === refreshedTitle) {
+    return { title: refreshedTitle, update: null };
+  }
+
+  if (refreshedTitle) {
+    return {
+      title: refreshedTitle,
+      update: { $set: { title: refreshedTitle } },
+    };
+  }
+
+  if (normalizedCurrentTitle) {
+    return {
+      title: undefined,
+      update: { $unset: { title: "" } },
+    };
+  }
+
+  return { title: undefined, update: null };
+};
+
+const runWithConcurrencyLimit = async <T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+) => {
+  if (items.length === 0) {
+    return;
+  }
+
+  let index = 0;
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  const runners = Array.from({ length: workerCount }, async () => {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      await worker(items[currentIndex]);
+    }
+  });
+
+  await Promise.all(runners);
+};
+
+const refreshDocMetadata = async (
+  collection: Collection<Doc>,
+  userId: string,
+  doc: DocWithId,
+) => {
+  try {
+    const titleUpdate = await buildTitleUpdate(doc.url, doc.title);
+    if (!titleUpdate.update) {
+      return false;
+    }
+
+    const filter = { _id: doc._id, user_id: userId } as Filter<Doc>;
+    await collection.updateOne(filter, titleUpdate.update);
+    return true;
+  } catch (error) {
+    console.error("Metadata refresh failed for document.", {
+      userId,
+      docId: doc._id.toString(),
+      url: doc.url,
+      error,
+    });
+    return false;
+  }
+};
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   const userId = getUserId(session);
@@ -54,14 +149,43 @@ export async function GET() {
     return unauthorized("User identity is missing.");
   }
   const db = await getDb();
-  const docs = await db
-    .collection<Doc>(collectionName)
+  const collection = db.collection<Doc>(collectionName);
+  const docs = (await collection
     .find({ user_id: userId })
     .sort({ created_at: -1 })
-    .toArray();
+    .toArray()) as DocWithId[];
 
   return NextResponse.json({
-    docs: docs.map((doc) => toApiDoc(doc as DocWithId)),
+    docs: docs.map((doc) => toApiDoc(doc)),
+  });
+}
+
+export async function PUT() {
+  const session = await getServerSession(authOptions);
+  const userId = getUserId(session);
+  if (!userId) {
+    return unauthorized("User identity is missing.");
+  }
+
+  const db = await getDb();
+  const collection = db.collection<Doc>(collectionName);
+  const docs = (await collection
+    .find({ user_id: userId })
+    .sort({ created_at: -1 })
+    .toArray()) as DocWithId[];
+  let updatedCount = 0;
+
+  await runWithConcurrencyLimit(docs, METADATA_REFRESH_CONCURRENCY, async (doc) => {
+    const updated = await refreshDocMetadata(collection, userId, doc);
+    if (updated) {
+      updatedCount += 1;
+    }
+  });
+
+  return NextResponse.json({
+    ok: true,
+    totalCount: docs.length,
+    updatedCount,
   });
 }
 
@@ -84,17 +208,16 @@ export async function POST(request: Request) {
 
   const db = await getDb();
   const collection = db.collection<Doc>(collectionName);
-  let metadata: DocMetadata;
+  let title: string | undefined;
   try {
-    metadata = await gatherDocMetadata(url);
+    title = (await buildTitleUpdate(url)).title;
   } catch {
     return internalError("Could not fetch document metadata.");
   }
-  const title = typeof metadata.title === "string" ? metadata.title.trim() : "";
   const createdAt = new Date();
   const doc: Doc = {
     url,
-    title: title.length > 0 ? title : undefined,
+    title,
     user_id: userId,
     created_at: createdAt,
     read: false,

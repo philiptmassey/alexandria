@@ -4,6 +4,7 @@ import { gatherDocMetadata } from "./docMetadata";
 const openAiUrl =
   "https://openai.com/index/unrolling-the-codex-agent-loop/";
 const arxivPdfUrl = "https://arxiv.org/pdf/2512.24601";
+const arxivPdfFallbackUrl = "https://arxiv.org/pdf/2304.03442";
 const darioEssayUrl =
   "https://www.darioamodei.com/essay/the-adolescence-of-technology";
 
@@ -22,6 +23,17 @@ describe("gatherDocMetadata (live)", () => {
     async () => {
       const metadata = await gatherDocMetadata(arxivPdfUrl);
       expect(metadata.title).toBe("Recursive Language Models");
+    },
+    { timeout: 20000 },
+  );
+
+  it(
+    "falls back to arXiv abs page title when PDF metadata title is missing",
+    async () => {
+      const metadata = await gatherDocMetadata(arxivPdfFallbackUrl);
+      expect(metadata.title).toBe(
+        "Generative Agents: Interactive Simulacra of Human Behavior",
+      );
     },
     { timeout: 20000 },
   );

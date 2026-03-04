@@ -73,9 +73,10 @@ export default function LibrarySection({
                     setPage((currentPage) => Math.max(1, currentPage - 1))
                   }
                   disabled={page === 1}
+                  aria-label="Previous page"
                   className="rounded-full border border-zinc-200 bg-white px-3 py-1 font-semibold uppercase tracking-wide text-zinc-600 shadow-sm transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Prev
+                  ←
                 </button>
                 <button
                   type="button"
@@ -85,9 +86,10 @@ export default function LibrarySection({
                     )
                   }
                   disabled={page === totalPages}
+                  aria-label="Next page"
                   className="rounded-full border border-zinc-200 bg-white px-3 py-1 font-semibold uppercase tracking-wide text-zinc-600 shadow-sm transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Next
+                  →
                 </button>
               </div>
             </div>

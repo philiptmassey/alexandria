@@ -1,49 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { gatherDocMetadata } from "./docMetadata";
+import { extractTitleFromHtml, extractTitleFromPdf } from "./docMetadata";
 
-const openAiUrl =
-  "https://openai.com/index/unrolling-the-codex-agent-loop/";
-const arxivPdfUrl = "https://arxiv.org/pdf/2512.24601";
-const arxivPdfFallbackUrl = "https://arxiv.org/pdf/2304.03442";
-const darioEssayUrl =
-  "https://www.darioamodei.com/essay/the-adolescence-of-technology";
+describe("extractTitleFromHtml", () => {
+  it("prefers Open Graph metadata and decodes entities", () => {
+    const html = `
+      <html><head>
+        <title>Site title</title>
+        <meta property="og:title" content="Research &amp; Practice" />
+      </head><body><h1>Heading title</h1></body></html>
+    `;
+    expect(extractTitleFromHtml(html)).toBe("Research & Practice");
+  });
 
-describe("gatherDocMetadata (live)", () => {
-  it(
-    "extracts title from OpenAI article",
-    async () => {
-      const metadata = await gatherDocMetadata(openAiUrl);
-      expect(metadata.title).toBe("Unrolling the Codex agent loop");
-    },
-    { timeout: 20000 },
-  );
+  it("uses article JSON-LD when social metadata is absent", () => {
+    const html = `
+      <script type="application/ld+json">
+        {"@type":"ScholarlyArticle","headline":"Recursive Language Models"}
+      </script>
+    `;
+    expect(extractTitleFromHtml(html)).toBe("Recursive Language Models");
+  });
 
-  it(
-    "extracts title from arXiv PDF metadata",
-    async () => {
-      const metadata = await gatherDocMetadata(arxivPdfUrl);
-      expect(metadata.title).toBe("Recursive Language Models");
-    },
-    { timeout: 20000 },
-  );
+  it("falls back to the document title before the first heading", () => {
+    expect(
+      extractTitleFromHtml("<title>  A useful essay  </title><h1>Navigation</h1>"),
+    ).toBe("A useful essay");
+  });
+});
 
-  it(
-    "falls back to arXiv abs page title when PDF metadata title is missing",
-    async () => {
-      const metadata = await gatherDocMetadata(arxivPdfFallbackUrl);
-      expect(metadata.title).toBe(
-        "Generative Agents: Interactive Simulacra of Human Behavior",
-      );
-    },
-    { timeout: 20000 },
-  );
+describe("extractTitleFromPdf", () => {
+  it("extracts literal PDF metadata", () => {
+    const bytes = Buffer.from("%PDF-1.7\n<< /Title (A Paper With \\(Context\\)) >>");
+    expect(extractTitleFromPdf(bytes)).toBe("A Paper With (Context)");
+  });
 
-  it(
-    "extracts title from Dario Amodei essay",
-    async () => {
-      const metadata = await gatherDocMetadata(darioEssayUrl);
-      expect(metadata.title).toBe("The Adolescence of Technology");
-    },
-    { timeout: 20000 },
-  );
+  it("extracts UTF-16BE hexadecimal metadata", () => {
+    const value = Buffer.from([0xfe, 0xff, 0x00, 0x41, 0x00, 0x49]).toString("hex");
+    const bytes = Buffer.from(`%PDF-1.7\n<< /Title <${value}> >>`);
+    expect(extractTitleFromPdf(bytes)).toBe("AI");
+  });
 });

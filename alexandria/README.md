@@ -1,78 +1,121 @@
 # Alexandria
 
-Personal reading queue for saving and managing articles with Google sign-in.
+A quiet personal library for academic papers, essays, and articles. Alexandria
+keeps an unread queue, remembers completed reading, and enriches saved URLs with
+titles and source metadata.
 
-## What It Does
-- Save URLs and auto-extract titles from HTML or PDF.
-- Keep unread and read lists with timestamps.
-- Mark read/unread, delete entries, and open links.
-- Save the current tab with the Chrome extension.
+## Features
 
-## Tech Stack
-- Next.js (App Router)
-- NextAuth (Google)
+- Fast URL capture from the web app or existing Chrome extension.
+- Atomic duplicate protection after the database migration.
+- URL cleanup that removes tracking parameters without discarding meaningful
+  query parameters.
+- Equivalent arXiv and DOI links share one document identity.
+- Background title enrichment with arXiv, Crossref, HTML, and PDF fallbacks.
+- Manual title editing when a source blocks metadata access.
+- Unread, recently read, and complete-library views with search and pagination.
+- Recoverable deletion with an undo action.
+- Optional Google account allowlist.
+
+## Stack
+
+- Next.js App Router and React
+- NextAuth with Google
 - MongoDB
+- Vitest
+- Vercel deployment
 
-## Local Setup
-1. Start MongoDB locally or use MongoDB Atlas.
+## Local setup
 
-Local MongoDB default:
+Requirements:
+
+- Node.js 24
+- pnpm 10.28.2
+- MongoDB locally or through Atlas
 
 ```bash
-mongod --dbpath ./data/mongo
-```
-
-2. Install dependencies and run the dev server.
-
-```bash
+cp .env.example .env.local
 pnpm install
 pnpm dev
-# or
-npm run dev
-# or
-yarn dev
-# or
-bun dev
 ```
 
-3. Open http://localhost:3000.
+Then open <http://localhost:3000>.
 
-## Environment Variables
-- MONGODB_URI
-- GOOGLE_CLIENT_ID
-- GOOGLE_CLIENT_SECRET
-- NEXTAUTH_SECRET
-- NEXTAUTH_URL (optional, recommended in production)
+## Environment variables
 
-Do not commit actual values.
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `MONGODB_URI` | Yes | MongoDB connection URI. |
+| `MONGODB_DB` | No | Database name; defaults to `alexandria`. |
+| `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID. |
+| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret. |
+| `NEXTAUTH_SECRET` | Yes | NextAuth signing secret. |
+| `NEXTAUTH_URL` | Production | Public deployment URL. |
+| `AUTHORIZED_EMAILS` | No | Comma-separated Google email allowlist. Empty permits any Google account. |
 
-## Chrome Extension
-The extension lives in `chrome-extension`.
+## Existing-data migration
 
-Unpacked install steps:
-1. Open `chrome://extensions`.
-2. Enable Developer Mode.
-3. Click "Load unpacked" and select the `chrome-extension` folder.
-4. Open the extension options and set your app base URL.
+The migration backfills normalized URLs, domains, and deduplication keys. It
+also reports duplicate groups and creates the indexes used by the application.
+It is deliberately dry-run-only by default.
 
-For more details, see `chrome-extension/README.md`.
+```bash
+# Report only; performs no writes.
+pnpm migrate:docs
 
-## API Overview
-All endpoints require Google sign-in.
+# Apply after reviewing the report. --backup is mandatory and creates a
+# timestamped docs_backup_* collection before changing any documents.
+pnpm migrate:docs -- --apply --backup
+```
 
-- `GET /api/docs` lists saved documents.
-- `POST /api/docs` adds a URL.
-- `PUT /api/docs` refreshes metadata for saved documents.
-- `PATCH /api/docs` toggles read state.
-- `DELETE /api/docs` removes a URL.
+Duplicate merges preserve the earliest added date, any read state, the most
+recent known read date, and the best available title. Removed duplicate IDs are
+recorded on the surviving document. Invalid legacy URLs are reported and left
+unchanged.
 
-## Future Plans
-- Search + filters (title/url/domain, read/unread, date ranges, optional sorting).
-- Tags and labels.
-- Bulk actions (mark read/unread, delete, tag).
-- Duplicate detection on save.
-- Metadata enrichment (domain, favicon, reading time).
-- Notes and highlights.
-- Import and export (CSV/JSON/bookmarks).
-- Reminders or digest.
-- Saved views.
+Do not run apply mode until `MONGODB_URI` explicitly points to the intended
+database and the dry-run report has been reviewed.
+
+## Metadata processing
+
+Saving a URL no longer waits for remote metadata. The API stores the item first,
+returns success to the browser or extension, and schedules title enrichment with
+Next.js `after()`. Failed enrichment never removes an existing title. Users can
+retry extraction or enter a manual title, which subsequent refreshes preserve.
+
+Remote fetches accept only HTTP(S), limit response size and redirects, and reject
+localhost, private networks, link-local addresses, and other non-public IPs.
+
+## Chrome extension compatibility
+
+The extension remains in `chrome-extension` and does not need to change. It still
+sends:
+
+```http
+POST /api/docs
+Content-Type: application/json
+
+{ "url": "https://example.com/article" }
+```
+
+New documents return `201`; existing documents return `200` with
+`duplicate: true`. Both are successful responses for the current extension.
+
+## API
+
+- `GET /api/docs?status=unread|read|all&q=&cursor=` — paginated library.
+- `POST /api/docs` — save or return an existing URL.
+- `PATCH /api/docs` — update read state, edit a title, or restore an item.
+- `DELETE /api/docs` — soft-delete an item.
+- `PUT /api/docs` — retry one item or schedule a small missing-title backfill.
+
+All endpoints require an authenticated Google session.
+
+## Verification
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```

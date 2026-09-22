@@ -1,50 +1,23 @@
-"use client";
-
-import { signOut, useSession } from "next-auth/react";
-import { useState } from "react";
+import { getServerSession } from "next-auth/next";
 import AuthSplash from "@/app/components/auth-splash";
 import Library from "@/app/components/library";
+import { authOptions } from "@/lib/auth";
+import { listDocs } from "@/lib/docs";
 
-export default function Home() {
-  const { status, data: session } = useSession();
-  const [reloadSignal, setReloadSignal] = useState(0);
+export const dynamic = "force-dynamic";
 
-  if (status !== "authenticated") {
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) {
     return <AuthSplash />;
   }
 
+  const initialPage = await listDocs({ userId, status: "unread" });
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900">
-      <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
-        <header className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-            Alexandria
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Home
-              </h1>
-            </div>
-            <div className="flex items-center gap-3 text-sm text-zinc-600">
-              <span className="hidden sm:inline">
-                {session?.user?.email ?? session?.user?.name}
-              </span>
-              <button
-                type="button"
-                onClick={() => signOut()}
-                className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 shadow-sm transition hover:bg-zinc-100"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="mt-10">
-          <Library reloadSignal={reloadSignal} />
-        </div>
-      </main>
-    </div>
+    <Library
+      initialPage={initialPage}
+      userLabel={session?.user?.email ?? session?.user?.name ?? "Account"}
+    />
   );
 }

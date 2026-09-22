@@ -1,529 +1,233 @@
+import { XMLParser } from "fast-xml-parser";
+import { fetchSafeSnippet } from "@/lib/safeFetch";
+import { normalizeDocUrl } from "@/lib/url";
+
 export type DocMetadata = {
   title?: string;
 };
 
-const MAX_SNIFF_BYTES = 512 * 1024;
+const MAX_SNIFF_BYTES = 768 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
-const DEFAULT_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-const DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9";
+const DEFAULT_HEADERS = {
+  Accept: "text/html,application/xhtml+xml,application/pdf,application/json;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "User-Agent":
+    "Mozilla/5.0 (compatible; Alexandria/1.0; +https://alexandria-psi.vercel.app)",
+};
 
-const normalizeTitle = (value: string | null | undefined) => {
-  const trimmed = (value ?? "").replace(/\s+/g, " ").trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+const normalizeTitle = (value: unknown) => {
+  if (typeof value !== "string") return undefined;
+  const title = decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
+  return title.length > 0 ? title : undefined;
 };
 
 const decodeHtmlEntities = (value: string) =>
   value
+    .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
+    .replace(/&apos;|&#39;/gi, "'")
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
-      String.fromCharCode(Number.parseInt(hex, 16)),
+      String.fromCodePoint(Number.parseInt(hex, 16)),
     )
-    .replace(/&#([0-9]+);/gi, (_, num) =>
-      String.fromCharCode(Number.parseInt(num, 10)),
+    .replace(/&#([0-9]+);/gi, (_, number) =>
+      String.fromCodePoint(Number.parseInt(number, 10)),
     );
+
+const stripTags = (value: string) => value.replace(/<[^>]+>/g, " ");
 
 const parseMetaAttributes = (raw: string) => {
-  const attrs: Record<string, string> = {};
-  const attrRegex = /([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = attrRegex.exec(raw)) !== null) {
-    const key = match[1]?.toLowerCase();
-    if (!key) {
-      continue;
-    }
-    const value = match[3] ?? match[4] ?? match[5] ?? "";
-    attrs[key] = value;
+  const attributes: Record<string, string> = {};
+  const pattern = /([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(raw)) !== null) {
+    attributes[match[1].toLowerCase()] = match[3] ?? match[4] ?? match[5] ?? "";
   }
-  return attrs;
+  return attributes;
 };
 
-const extractHeadingTitles = (html: string) => {
-  const matches = html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi);
-  const titles: string[] = [];
-  for (const match of matches) {
-    const cleaned = match[1]?.replace(/<[^>]+>/g, " ");
-    const normalized = normalizeTitle(
-      cleaned ? decodeHtmlEntities(cleaned) : "",
-    );
-    if (normalized) {
-      titles.push(normalized);
-    }
+const extractMetaTitles = (html: string) => {
+  const titles = new Map<string, string>();
+  const pattern = /<meta\b([^>]*?)>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    const attributes = parseMetaAttributes(match[1]);
+    const key = (attributes.property ?? attributes.name ?? "").toLowerCase();
+    const value = normalizeTitle(attributes.content);
+    if (value && !titles.has(key)) titles.set(key, value);
   }
   return titles;
 };
 
-const pickBestHeadingTitle = (titles: string[]) => {
-  if (titles.length === 0) {
+const findJsonLdTitle = (value: unknown): string | undefined => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const title = findJsonLdTitle(item);
+      if (title) return title;
+    }
     return undefined;
   }
-  const counts = new Map<string, { count: number; index: number }>();
-  titles.forEach((title, index) => {
-    const entry = counts.get(title);
-    if (entry) {
-      entry.count += 1;
-      return;
-    }
-    counts.set(title, { count: 1, index });
-  });
+  if (!value || typeof value !== "object") return undefined;
 
-  let bestTitle = titles[0];
-  let bestCount = 0;
-  let bestLength = 0;
-  let bestIndex = Number.POSITIVE_INFINITY;
-  for (const [title, { count, index }] of counts.entries()) {
-    const length = title.length;
-    if (
-      count > bestCount ||
-      (count === bestCount && length > bestLength) ||
-      (count === bestCount && length === bestLength && index < bestIndex)
-    ) {
-      bestTitle = title;
-      bestCount = count;
-      bestLength = length;
-      bestIndex = index;
-    }
+  const record = value as Record<string, unknown>;
+  const type = Array.isArray(record["@type"])
+    ? record["@type"].join(" ")
+    : String(record["@type"] ?? "");
+  if (/article|posting|scholarly|creativework/i.test(type)) {
+    const title = normalizeTitle(record.headline) ?? normalizeTitle(record.name);
+    if (title) return title;
   }
 
-  return bestTitle;
-};
-
-const buildHeadingCounts = (titles: string[]) => {
-  const counts = new Map<string, number>();
-  for (const title of titles) {
-    const key = title.toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+  for (const child of Object.values(record)) {
+    const title = findJsonLdTitle(child);
+    if (title) return title;
   }
-  return counts;
-};
-
-const splitTitleSegments = (title: string) => {
-  const normalized = title.replace(/\s+/g, " ").trim();
-  const segments = normalized
-    .split(/\s+(?:\|+|—|–|-|:|·|•|::)\s+/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  return segments.length > 0 ? segments : [normalized];
-};
-
-const STOP_SLUG_TOKENS = new Set([
-  "the",
-  "and",
-  "or",
-  "of",
-  "a",
-  "an",
-  "to",
-  "in",
-  "on",
-  "for",
-  "with",
-  "by",
-  "from",
-  "at",
-  "as",
-  "is",
-  "are",
-  "be",
-]);
-
-const extractUrlSlugTokens = (url: string | undefined) => {
-  if (!url) {
-    return [];
-  }
-  try {
-    const parsed = new URL(url);
-    const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parts.length === 0) {
-      return [];
-    }
-    let slug = "";
-    for (let i = parts.length - 1; i >= 0; i -= 1) {
-      const candidate = parts[i].toLowerCase();
-      if (candidate && candidate !== "index" && candidate !== "home") {
-        slug = candidate;
-        break;
-      }
-    }
-    if (!slug) {
-      return [];
-    }
-    slug = slug.replace(/\.(html?|php|aspx?)$/i, "");
-    const tokens = slug
-      .replace(/[_-]+/g, " ")
-      .replace(/[^a-z0-9 ]+/gi, " ")
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((token) => token.length >= 2 && !/^\d+$/.test(token))
-      .filter((token) => !STOP_SLUG_TOKENS.has(token));
-    return Array.from(new Set(tokens));
-  } catch {
-    return [];
-  }
-};
-
-const pickBestTitleSegment = (
-  segments: string[],
-  headingCounts: Map<string, number>,
-  url?: string,
-) => {
-  if (segments.length <= 1) {
-    return undefined;
-  }
-  const slugTokens = extractUrlSlugTokens(url);
-  let bestSegment: string | undefined;
-  let bestSlugMatches = 0;
-  let bestHeadingCount = 0;
-  let bestLength = 0;
-
-  for (const segment of segments) {
-    const lower = segment.toLowerCase();
-    let slugMatches = 0;
-    for (const token of slugTokens) {
-      if (lower.includes(token)) {
-        slugMatches += 1;
-      }
-    }
-    const headingCount = headingCounts.get(lower) ?? 0;
-    const length = segment.length;
-    if (
-      slugMatches > bestSlugMatches ||
-      (slugMatches === bestSlugMatches && headingCount > bestHeadingCount) ||
-      (slugMatches === bestSlugMatches &&
-        headingCount === bestHeadingCount &&
-        length > bestLength)
-    ) {
-      bestSegment = segment;
-      bestSlugMatches = slugMatches;
-      bestHeadingCount = headingCount;
-      bestLength = length;
-    }
-  }
-
-  if (
-    (bestSlugMatches >= 2 || (bestSlugMatches >= 1 && bestLength >= 12)) ||
-    bestHeadingCount >= 2
-  ) {
-    return bestSegment;
-  }
-
   return undefined;
 };
 
-const readResponseBytes = async (response: Response, maxBytes: number) => {
-  if (!response.body) {
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return buffer.subarray(0, maxBytes);
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+const extractJsonLdTitle = (html: string) => {
+  const pattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null) {
+    try {
+      const title = findJsonLdTitle(JSON.parse(match[1]));
+      if (title) return title;
+    } catch {
+      // Ignore malformed JSON-LD and continue through the remaining signals.
     }
-    if (!value) {
-      continue;
-    }
-    if (total + value.length >= maxBytes) {
-      chunks.push(value.subarray(0, maxBytes - total));
-      total = maxBytes;
-      await reader.cancel();
-      break;
-    }
-    chunks.push(value);
-    total += value.length;
   }
-
-  if (chunks.length === 0) {
-    return new Uint8Array();
-  }
-
-  const buffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
-  return buffer.subarray(0, maxBytes);
+  return undefined;
 };
 
-const fetchUrlSnippet = async (url: string) => {
-  const baseHeaders = {
-    Accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
-    "Accept-Language": DEFAULT_ACCEPT_LANGUAGE,
-    "User-Agent": DEFAULT_UA,
-  };
-
-  const response = await fetch(url, {
-    headers: { ...baseHeaders, Range: `bytes=0-${MAX_SNIFF_BYTES - 1}` },
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    if (response.status !== 416) {
-      return null;
-    }
-    const fallback = await fetch(url, {
-      headers: baseHeaders,
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!fallback.ok) {
-      return null;
-    }
-    const fallbackBytes = await readResponseBytes(fallback, MAX_SNIFF_BYTES);
-    return {
-      bytes: fallbackBytes,
-      contentType: fallback.headers.get("content-type"),
-    };
-  }
-
-  const bytes = await readResponseBytes(response, MAX_SNIFF_BYTES);
-  return {
-    bytes,
-    contentType: response.headers.get("content-type"),
-  };
+const getFirstTagText = (html: string, tag: "title" | "h1") => {
+  const match = html.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return normalizeTitle(match?.[1] ? stripTags(match[1]) : undefined);
 };
 
-const isPdfSnippet = (bytes: Uint8Array, contentType: string | null) => {
-  if (contentType?.toLowerCase().includes("pdf")) {
-    return true;
-  }
+export const extractTitleFromHtml = (html: string) => {
+  const meta = extractMetaTitles(html);
   return (
-    bytes.length >= 5 &&
-    bytes[0] === 0x25 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x44 &&
-    bytes[3] === 0x46 &&
-    bytes[4] === 0x2d
+    meta.get("og:title") ??
+    meta.get("twitter:title") ??
+    extractJsonLdTitle(html) ??
+    getFirstTagText(html, "title") ??
+    getFirstTagText(html, "h1")
   );
-};
-
-const getArxivAbsUrlFromPdfUrl = (url: string) => {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname !== "arxiv.org" && hostname !== "www.arxiv.org") {
-      return null;
-    }
-
-    const match = parsed.pathname.match(/^\/pdf\/(.+?)(?:\.pdf)?\/?$/i);
-    const identifier = match?.[1]?.replace(/^\/+|\/+$/g, "");
-    if (!identifier) {
-      return null;
-    }
-
-    return `https://arxiv.org/abs/${identifier}`;
-  } catch {
-    return null;
-  }
-};
-
-const extractArxivAbsTitleFromPdfUrl = async (pdfUrl: string) => {
-  const absUrl = getArxivAbsUrlFromPdfUrl(pdfUrl);
-  if (!absUrl) {
-    return undefined;
-  }
-
-  try {
-    const snippet = await fetchUrlSnippet(absUrl);
-    if (!snippet || isPdfSnippet(snippet.bytes, snippet.contentType)) {
-      return undefined;
-    }
-
-    const html = new TextDecoder("utf-8", { fatal: false }).decode(
-      snippet.bytes,
-    );
-    return extractTitleFromHtml(html, absUrl);
-  } catch {
-    return undefined;
-  }
-};
-
-const extractNextDataTitle = (html: string) => {
-  const match = html.match(
-    /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
-  );
-  if (!match?.[1]) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(match[1]);
-    const pathCandidates: Array<Array<string>> = [
-      ["props", "pageProps", "title"],
-      ["props", "pageProps", "seo", "title"],
-      ["pageProps", "title"],
-    ];
-    for (const path of pathCandidates) {
-      let cursor: unknown = parsed;
-      for (const key of path) {
-        if (!cursor || typeof cursor !== "object") {
-          cursor = undefined;
-          break;
-        }
-        cursor = (cursor as Record<string, unknown>)[key];
-      }
-      if (typeof cursor === "string") {
-        const normalized = normalizeTitle(decodeHtmlEntities(cursor));
-        if (normalized) {
-          return normalized;
-        }
-      }
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-};
-
-const extractMetaTitle = (html: string) => {
-  const metaRegex = /<meta\b([^>]*?)>/gi;
-  let match: RegExpExecArray | null = null;
-  while ((match = metaRegex.exec(html)) !== null) {
-    const attrs = parseMetaAttributes(match[1]);
-    const key = (attrs.property ?? attrs.name ?? "").toLowerCase();
-    if (key === "og:title" || key === "twitter:title" || key === "title") {
-      const normalized = normalizeTitle(
-        decodeHtmlEntities(attrs.content ?? ""),
-      );
-      if (normalized) {
-        return normalized;
-      }
-    }
-  }
-  return undefined;
-};
-
-const extractTitleFromHtml = (html: string, url?: string) => {
-  const headings = extractHeadingTitles(html);
-  const headingCounts = buildHeadingCounts(headings);
-
-  const nextTitle = extractNextDataTitle(html);
-  if (nextTitle) {
-    return nextTitle;
-  }
-
-  const metaTitle = extractMetaTitle(html);
-  if (metaTitle) {
-    const segments = splitTitleSegments(metaTitle);
-    const refined = pickBestTitleSegment(segments, headingCounts, url);
-    return refined ?? metaTitle;
-  }
-
-  const headingTitle = pickBestHeadingTitle(headings);
-  if (headingTitle) {
-    return headingTitle;
-  }
-
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!titleMatch?.[1]) {
-    return undefined;
-  }
-  const cleaned = titleMatch[1].replace(/<[^>]+>/g, " ");
-  const normalized = normalizeTitle(decodeHtmlEntities(cleaned));
-  if (!normalized) {
-    return undefined;
-  }
-  const segments = splitTitleSegments(normalized);
-  const refined = pickBestTitleSegment(segments, headingCounts, url);
-  return refined ?? normalized;
 };
 
 const extractPdfLiteral = (text: string, startIndex: number) => {
   const openIndex = text.indexOf("(", startIndex);
-  if (openIndex === -1) {
-    return null;
-  }
+  if (openIndex === -1) return null;
   let depth = 1;
   let result = "";
-  for (let i = openIndex + 1; i < text.length; i += 1) {
-    const char = text[i];
-    if (char === "\\") {
-      if (i + 1 < text.length) {
-        result += text[i + 1];
-        i += 1;
-      }
-      continue;
-    }
-    if (char === "(") {
+  for (let index = openIndex + 1; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === "\\" && index + 1 < text.length) {
+      result += text[index + 1];
+      index += 1;
+    } else if (character === "(") {
       depth += 1;
-      result += char;
-      continue;
-    }
-    if (char === ")") {
+      result += character;
+    } else if (character === ")") {
       depth -= 1;
-      if (depth === 0) {
-        return result;
-      }
-      result += char;
-      continue;
+      if (depth === 0) return result;
+      result += character;
+    } else {
+      result += character;
     }
-    result += char;
   }
   return null;
 };
 
 const decodePdfHex = (hex: string) => {
   const bytes = Buffer.from(hex, "hex");
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
     let result = "";
-    for (let i = 2; i + 1 < bytes.length; i += 2) {
-      result += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      result += String.fromCharCode((bytes[index] << 8) | bytes[index + 1]);
     }
     return result;
   }
   return bytes.toString("latin1");
 };
 
-const extractTitleFromPdf = (bytes: Uint8Array) => {
+export const extractTitleFromPdf = (bytes: Uint8Array) => {
   const text = Buffer.from(bytes).toString("latin1");
-
   const titleIndex = text.indexOf("/Title");
-  if (titleIndex !== -1) {
-    const literalTitle = extractPdfLiteral(text, titleIndex);
-    if (literalTitle) {
-      const title = normalizeTitle(literalTitle);
-      if (title) {
-        return title;
-      }
-    }
-    const hexMatch = text
-      .slice(titleIndex, titleIndex + 200)
-      .match(/\/Title\s*<([0-9a-fA-F]+)>/);
-    if (hexMatch?.[1]) {
-      const title = normalizeTitle(decodePdfHex(hexMatch[1]));
-      if (title) {
-        return title;
-      }
-    }
-  }
+  if (titleIndex === -1) return undefined;
 
-  return undefined;
+  const literal = extractPdfLiteral(text, titleIndex);
+  if (literal) return normalizeTitle(literal);
+
+  const hex = text.slice(titleIndex, titleIndex + 512).match(/\/Title\s*<([0-9a-fA-F]+)>/)?.[1];
+  return hex ? normalizeTitle(decodePdfHex(hex)) : undefined;
+};
+
+const isPdf = (bytes: Uint8Array, contentType: string | null) =>
+  Boolean(contentType?.toLowerCase().includes("pdf")) ||
+  Buffer.from(bytes.subarray(0, 5)).toString("ascii") === "%PDF-";
+
+const decodeText = (bytes: Uint8Array, contentType: string | null) => {
+  const charset = contentType?.match(/charset=([^;\s]+)/i)?.[1]?.replace(/["']/g, "");
+  try {
+    return new TextDecoder(charset || "utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+};
+
+const fetchSnippet = (url: string) =>
+  fetchSafeSnippet(url, {
+    maxBytes: MAX_SNIFF_BYTES,
+    timeoutMs: FETCH_TIMEOUT_MS,
+    headers: DEFAULT_HEADERS,
+  });
+
+const getArxivTitle = async (identifier: string) => {
+  const response = await fetchSnippet(
+    `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(identifier)}`,
+  );
+  if (!response) return undefined;
+  const xml = decodeText(response.bytes, response.contentType);
+  const parsed = new XMLParser({ ignoreAttributes: false, trimValues: true }).parse(xml);
+  const entry = parsed?.feed?.entry;
+  const firstEntry = Array.isArray(entry) ? entry[0] : entry;
+  return normalizeTitle(firstEntry?.title);
+};
+
+const getCrossrefTitle = async (doi: string) => {
+  const response = await fetchSnippet(
+    `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
+  );
+  if (!response) return undefined;
+  try {
+    const payload = JSON.parse(decodeText(response.bytes, response.contentType));
+    const title = payload?.message?.title;
+    return normalizeTitle(Array.isArray(title) ? title[0] : title);
+  } catch {
+    return undefined;
+  }
 };
 
 export const gatherDocMetadata = async (url: string): Promise<DocMetadata> => {
-  const snippet = await fetchUrlSnippet(url);
-  if (!snippet) {
-    return {};
+  const normalized = normalizeDocUrl(url);
+  if (normalized.provider === "arxiv") {
+    const title = await getArxivTitle(normalized.dedupeKey.slice("arxiv:".length));
+    if (title) return { title };
+  }
+  if (normalized.provider === "doi") {
+    const title = await getCrossrefTitle(normalized.dedupeKey.slice("doi:".length));
+    if (title) return { title };
   }
 
-  if (isPdfSnippet(snippet.bytes, snippet.contentType)) {
-    const pdfTitle = extractTitleFromPdf(snippet.bytes);
-    if (pdfTitle) {
-      return { title: pdfTitle };
-    }
-
-    const arxivTitle = await extractArxivAbsTitleFromPdfUrl(url);
-    return arxivTitle ? { title: arxivTitle } : {};
+  const response = await fetchSnippet(normalized.url);
+  if (!response) return {};
+  if (isPdf(response.bytes, response.contentType)) {
+    return { title: extractTitleFromPdf(response.bytes) };
   }
-
-  const html = new TextDecoder("utf-8", { fatal: false }).decode(
-    snippet.bytes,
-  );
-  const title = extractTitleFromHtml(html, url);
-  return title ? { title } : {};
+  return {
+    title: extractTitleFromHtml(decodeText(response.bytes, response.contentType)),
+  };
 };
